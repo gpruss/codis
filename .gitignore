@@ -1,0 +1,3 @@
+# do not track data directory and virtual environment
+data/
+venv/
