@@ -1,39 +1,26 @@
-#!/home/gunnar/gfz/python/CODiS/venv/bin/python
-
+#!/my/path/to/CODiS/venv/bin/python
 """
-This Python script downloads and formats weather data published by the
-Taiwanese Central Weather Bureau on the Observation Data Inquire System (CODiS).
-All configuration (station names, dates and paths) is to be done in
-a JSON configuration file called 'config.json', e.g.:
+This Python script downloads weather data that have been published by the
+Taiwanese Central Weather Bureau (CWB) on it's Observation Data Inquire System
+(CODiS). The data are formatted and station-wise written into comma separated
+files. If the script comes across an existing station file, it will check the
+last observation and continue the download from there.
 
-{
-    "data_directory" : "./my_CODiS_data",
-    "start_date"     : "2017-07-21",
-    "station_list"   : {
-        "Alishan"         : { "station" : "467530", "stname" : "阿里山"   },
-        "Zhushan"         : { "station" : "C0I110", "stname" : "竹山"     }}
-}
-
-What this script does:
-> create the data directory (if it does not exist yet)
-> create one csv-file per station (if it does not exist yet)
-> write or append the downloaded observation data
-
-What it does NOT:
-> rearrange lines in a chronological order
-> integrity check (e.g. duplicate lines, uncovered periods)
+Please see https://github.com/gpruss/codis for further information.
 """
 
 
 
 ################################### MODULES ####################################
+# standard library
 from datetime     import date, datetime, timedelta
 from json         import load, JSONDecodeError
 from os           import getcwd, makedirs, path
-from pandas       import ( DataFrame, MultiIndex, Timestamp, date_range,
-                           read_html, to_datetime )
 from urllib.parse import quote
 
+# third party libraries
+from pandas       import ( DataFrame, MultiIndex, Timestamp, date_range,
+                           read_html, to_datetime )
 
 
 ########################### READ CONFIGURATION FILE ############################
@@ -41,7 +28,7 @@ from urllib.parse import quote
 # is part of the Python Standard library. To facilitate code maintenance with
 # git all configuration is transfered to the file './config.json'.
 
-# read the configuration file (this creates a dictionary)
+# read the configuration file (returns a dictionary)
 try:
     with open('./config.json') as config_file:
             config = load(config_file)
@@ -72,8 +59,9 @@ print( '> data directory:', data_directory)
 
 
 # get the start date
-# note: If data files are already present start_date will be overridden by the
-#       last observation of the file, i.e. the download will be continued.
+# note: If data files are already present start_date will be overridden later
+#       by the last observation of the file, i.e. the download will be con-
+#       tinued.
 if 'start_date' in config:
 
     # convert string into a date object
@@ -86,7 +74,7 @@ if 'start_date' in config:
         raise SystemExit(
             f'\nError: start_date given in unknown format <{config["start_date"]}>'
              '\nPlease edit your config.json and use the following date format: '
-             'YYYY-MM-DD!')
+             '"YYYY-MM-DD", e.g. "2010-01-01"!')
 
 else:
     # if no start date has been specified, default to January 1, 2010
@@ -110,7 +98,7 @@ if 'end_date' in config:
         raise SystemExit(
             f'\nError: end_date given in unknown format <{config["end_date"]}>'
              '\nPlease edit your config.json and use the following date format: '
-             'YYYY-MM-DD!')
+             '"YYYY-MM-DD", e.g. "2017-01-01"!')
 
 else:
     # Data is updated at 12:00 noon the next day. Therefore using the day before
@@ -123,9 +111,6 @@ print( '> end date      :', end_date)
 
 
 # get the station list
-# schema: {'[FILE_NAME]' : { 'station' : '[ID]', 'stname' : '[STATION]'  }, ...}
-#   note: for each station an output file will be created in the data directory
-#         (or updated)
 if 'station_list' in config:
     station_list = config['station_list']
 
@@ -138,7 +123,8 @@ else:
         '\n"station_list" : {'
         '\n    "[file_1]" : {"station" : "[ID_1]", "stname" : "[hanzi_name_1]"},'
         '\n    "[file_2]" : {"station" : "[ID_2]", "stname" : "[hanzi_name_2]"},'
-        '\n    [...]'
+        '\n    ...'
+        '\n    "[file_n]" : {"station" : "[ID_n]", "stname" : "[hanzi_name_n]"},'
         '\n }')
 
 
