@@ -1,92 +1,165 @@
-#!/home/gunnar/gfz/python/CODiS/venv/bin/python
+#!/my/path/to/CODiS/venv/bin/python
 
 """
-This Python script downloads and formats weather data published by the
-Taiwanese Central Weather Bureau on the Observation Data Inquire System (CODiS).
-On the first execution a data directory and station specific files will
-be created, on subsequent runs the fetched data will be appended to existing
-files.
+This Python script downloads weather data that have been published by the
+Taiwanese Central Weather Bureau (CWB) on it's Observation Data Inquire System
+(CODiS). The data are formatted and station-wise written into comma separated
+files. If the script comes across an existing station file, it will check the
+last observation and continue the download from there.
+
+Please see https://github.com/gpruss/codis for further information.
 """
 
 
 
 ################################### MODULES ####################################
+# standard library
 from datetime     import date, datetime, timedelta
-from os           import makedirs, path
-from pandas       import ( DataFrame, MultiIndex, Timestamp, date_range,
-                           read_html, to_datetime )
+from json         import load, JSONDecodeError
+from os           import getcwd, makedirs, path
 from urllib.parse import quote
 
+# third party libraries
+from pandas       import ( DataFrame, MultiIndex, Timestamp, date_range,
+                           read_html, to_datetime )
 
 
-################################ CONFIGURATION #################################
-# specify the data directory
-data_directory = './data'
+########################### READ CONFIGURATION FILE ############################
+# JSON files (JavaScript Object Notation) are easy to read and the json-module
+# is part of the Python Standard library. To facilitate code maintenance with
+# git all configuration is transfered to the file './config.json'.
 
-# specify download period
-# > There are no older observation data available at CODiS than 2010-01-01.
-# > If data files are already present start_date will be overridden by the
-#   last observation of the file, i.e. the download will be continued.
-# > Data is updated at 12:00 noon the next day. Therefore using the day before
-#   yesterday, i.e. date.today() - timedelta(days=2), should be safe regardless
-#   of the local time.
-start_date = '2017-07-09'
-end_date   = date.today() - timedelta(days=2)
+# read the configuration file (returns a dictionary)
+try:
+    with open('./config.json') as config_file:
+            config = load(config_file)
 
-# specify stations to be downloaded
-# schema: {'[FILE_NAME]' : { 'station' : '[ID]', 'stname' : '[STATION]'  }, ...}
-#   note: for each station an output file will be created in the data directory
-#         (or updated)
-station_list = {
-    'Buluowan'        : { 'station' : 'C1T830', 'stname' : '布洛灣'   },
-    'Cih-en'          : { 'station' : 'C1T810', 'stname' : '慈恩'     },
-    'Dayuling'        : { 'station' : 'C0T790', 'stname' : '大禹嶺'   },
-    'Fushih'          : { 'station' : 'C0T9C0', 'stname' : '富世'     },
-    'Hehuan_Mountain' : { 'station' : 'C0H9C0', 'stname' : '合歡山'   },
-    'Luoshao'         : { 'station' : 'C1T800', 'stname' : '洛韶'     },
-    'Malabangshan'    : { 'station' : 'C1E711', 'stname' : '馬拉邦山' },
-    'Sincheng'        : { 'station' : 'C0T841', 'stname' : '新城'     },
-    'Song-an'         : { 'station' : 'C1E461', 'stname' : '松安'     },
-    'Tiansiang'       : { 'station' : 'C0T820', 'stname' : '天祥'     },
-    'Wushikeng'       : { 'station' : 'C1F9H1', 'stname' : '烏石坑'   },
-    'Xiangbi'         : { 'station' : 'C1E451', 'stname' : '象鼻'     },
-    'Xueling'         : { 'station' : 'C1F941', 'stname' : '雪嶺'     },
-    'Zhuolan'         : { 'station' : 'C0E790', 'stname' : '卓蘭'     }}
+    # indicate progress
+    print('Reading configuration file:')
 
+except FileNotFoundError:
+    raise SystemExit('Error: configuration file <config.json> missing!')
+
+except JSONDecodeError as e:
+    raise SystemExit(
+        'Error: invalid configuration file <config.json>'
+        '\nPython is unable to parse your configuration file:'
+        '\n> {}'.format(e) )
+
+
+# get the data_directory
+if 'data_directory' in config:
+    data_directory = config['data_directory']
+
+else:
+    # if no data directory has been specified, default to './data'
+    data_directory = path.join( getcwd(), 'data')
+
+# indicate progress
+print( '> data directory:', data_directory)
+
+
+# get the start date
+# note: If data files are already present start_date will be overridden later
+#       by the last observation of the file, i.e. the download will be con-
+#       tinued.
+if 'start_date' in config:
+
+    # convert string into a date object
+    try:
+        start_date = datetime.strptime(config['start_date'], '%Y-%m-%d').date()
+
+    except ValueError:
+
+        # cancel script execution
+        raise SystemExit(
+            f'\nError: start_date given in unknown format <{config["start_date"]}>'
+             '\nPlease edit your config.json and use the following date format: '
+             '"YYYY-MM-DD", e.g. "2010-01-01"!')
+
+else:
+    # if no start date has been specified, default to January 1, 2010
+    # (There are no older observation data available at CODiS than that)
+    start_date = date(2010,1,1)
+
+# indicate progress
+print( '> start date    :', start_date)
+
+
+# get the end date
+if 'end_date' in config:
+
+    # convert string into a date object
+    try:
+        end_date = datetime.strptime(config['end_date'], '%Y-%m-%d').date()
+
+    except ValueError:
+
+        # cancel script execution
+        raise SystemExit(
+            f'\nError: end_date given in unknown format <{config["end_date"]}>'
+             '\nPlease edit your config.json and use the following date format: '
+             '"YYYY-MM-DD", e.g. "2017-01-01"!')
+
+else:
+    # Data is updated at 12:00 noon the next day. Therefore using the day before
+    # yesterday, i.e. date.today() - timedelta(days=2), should be safe regardless
+    # of the local time.
+    end_date   = date.today() - timedelta(days=2)
+
+# indicate progress
+print( '> end date      :', end_date)
+
+
+# get the station list
+if 'station_list' in config:
+    station_list = config['station_list']
+
+else:
+
+    # Quit the script
+    raise SystemExit(
+        '\nError: station_list not defined'
+        '\nPlease edit your config.json and add all stations to be downloaded:'
+        '\n"station_list" : {'
+        '\n    "[file_1]" : {"station" : "[ID_1]", "stname" : "[hanzi_name_1]"},'
+        '\n    "[file_2]" : {"station" : "[ID_2]", "stname" : "[hanzi_name_2]"},'
+        '\n    ...'
+        '\n    "[file_n]" : {"station" : "[ID_n]", "stname" : "[hanzi_name_n]"},'
+        '\n }')
+
+
+
+##################################### MAIN #####################################
 # set CODiS base URL (CWB Observation Data Inquire System, CWB = Central Weather
 # Bureau)
 base_URL = ( 'http://e-service.cwb.gov.tw/HistoryDataQuery/'
             'DayDataController.do?command=viewMain' )
 
+# sanity check: start_date cannot be prior to 2010-01-01
+if start_date < date(2010,1,1):
 
+    # Quit the script
+    raise SystemExit(
+        '\nError: start_date out of bounds'
+        '\nPlease edit your config.json and choose a start_date that is not '
+        'earlier than January 1, 2010')
 
-##################################### MAIN #####################################
-# make sure the data directory exists
-if not path.isdir( data_directory ):
+# sanity check: end_date cannot be later than the day before yesterday
+if end_date > (date.today() - timedelta(days=2)):
 
-    # indicate progress
-    print('creating data directory: {}'.format(path.abspath(data_directory)))
+    # Quit the script
+    raise SystemExit(
+        '\nError: end_date out of bounds'
+        '\nPlease edit your config.json and choose an end_date that is not '
+        'later than the day before yesterday (CODiS updates are not that fast).')
 
-    # create the directory
-    makedirs( data_directory )
-
-else:
-
-    # indicate progress
-    print('data directory already exists.')
-
-
-# convert date-strings to datetime-objects if necessary
-if isinstance(start_date,str):
-    start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-if isinstance(end_date,str):
-    end_date   = datetime.strptime(end_date,   '%Y-%m-%d').date()
 
 # sanity check: end_date must be after start_date
 if start_date > end_date:
 
     # present the choice to swap or to quit
-    user_input = input( ('start_date ({}) is after end_date ({}). Do you want'
+    user_input = input( ('\nstart_date ({}) is after end_date ({}). Do you want'
                          ' to swap the values [s] or quit the program [q]? '
                         ).format(start_date,end_date))
 
@@ -112,6 +185,16 @@ if start_date > end_date:
             # input not recognized
             user_input = input( ('Input not recognized. Please type either [s]'
                                  ' to switch, or [q] to quit. ') )
+
+
+# create the data directory if it does not exist yet
+if not path.isdir( data_directory ):
+
+    # indicate progress
+    print('\ncreating data directory: {}'.format(path.abspath(data_directory)))
+
+    # create the directory
+    makedirs( data_directory )
 
 
 # loop over all stations in station_list

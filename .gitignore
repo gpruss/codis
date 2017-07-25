@@ -1,3 +1,6 @@
 # do not track data directory and virtual environment
 data/
 venv/
+
+# configuration file
+config.json
