@@ -73,9 +73,9 @@ if 'start_date' in config:
 
         # cancel script execution
         raise SystemExit(
-            f'\nError: start_date given in unknown format <{config["start_date"]}>'
-             '\nPlease edit your config.json and use the following date format: '
-             '"YYYY-MM-DD", e.g. "2010-01-01"!')
+            ('\nError: start_date given in unknown format <{}>\nPlease edit '
+             'your config.json and use the following date format: "YYYY-MM-DD"'
+             ', e.g. "2010-01-01"!').format(config["start_date"]))
 
 else:
     # if no start date has been specified, default to January 1, 2010
@@ -97,9 +97,9 @@ if 'end_date' in config:
 
         # cancel script execution
         raise SystemExit(
-            f'\nError: end_date given in unknown format <{config["end_date"]}>'
-             '\nPlease edit your config.json and use the following date format: '
-             '"YYYY-MM-DD", e.g. "2017-01-01"!')
+            ('\nError: end_date given in unknown format <{}>\nPlease edit '
+             'your config.json and use the following date format: "YYYY-MM-DD"'
+             ', e.g. "2017-01-01"!').format(config["end_date"]))
 
 else:
     # Data is updated at 12:00 noon the next day. Therefore using the day before
