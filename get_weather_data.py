@@ -148,6 +148,7 @@ if 'start_date' in config:
 
         # cancel script execution
         sys.exit(1)
+
 else:
 
     # set the default value
@@ -406,8 +407,17 @@ for key, value in station_list.items():
                          converters = { '降水量(mm)Precp' : lambda x: 0.05 if x=='T' else x },
                          na_values  = ['X','V','/'] )[0]
 
+        # no observation data in this interval ( 本段時間區間內無觀測資料。)
+        if len(tmp) == 0:
+
+            # indicate progress
+            print('  ! no data in this interval')
+
+            # skip rest of the loop
+            continue
+
         # indicate progress
-        print( '> formatting data' )
+        print( '  + formatting data' )
 
         # reformat the index by combining the current date and time
         tmp.index = to_datetime( tmp.index, unit = 'h',
