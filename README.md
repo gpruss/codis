@@ -122,6 +122,7 @@ ouput and errors into files:
 
 ## Todo
 * LICENSE file
+* check validity: station_list
 * email notification on error
 * add timezone information for file update (import pytz, something like
   datetime.datetime.now(tz=pytz.timezone('Asia/Taipei'))

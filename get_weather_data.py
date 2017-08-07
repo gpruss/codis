@@ -14,37 +14,68 @@ Please see https://github.com/gpruss/codis for further information.
 
 ################################### MODULES ####################################
 # standard library
+import sys
 from datetime     import date, datetime, timedelta
 from json         import load, JSONDecodeError
-from os           import getcwd, makedirs, path
+from os           import makedirs, path
+from textwrap     import fill
 from urllib.parse import quote
 
 # third party libraries
 from pandas       import ( DataFrame, MultiIndex, Timestamp, date_range,
                            read_html, to_datetime )
 
+############################# FUNCTION DEFINITIONS #############################
+def term_print(text, line_width = 80):
+    """
+    Print strings with a predefined line width.
+    """
+    for paragraph in str.splitlines(text):
+        print(fill(paragraph, width = line_width))
+
 
 ########################### READ CONFIGURATION FILE ############################
 # JSON files (JavaScript Object Notation) are easy to read and the json-module
 # is part of the Python Standard library. To facilitate code maintenance with
-# git all configuration is transfered to the file './config.json'.
+# git all user configuration is transfered to the file './config.json'.
+
+# get script directory
+script_directory = path.dirname(path.realpath(__file__))
+
+
+# indicate progress
+# display a header consisting of the current date padded with hyphens
+term_print(('\n{:-^80}'.format(datetime.now().strftime('%Y-%m-%d %H:%M'))))
 
 # read the configuration file (returns a dictionary)
 try:
-    with open('./config.json') as config_file:
+    with open(path.join(script_directory, 'config.json')) as config_file:
             config = load(config_file)
 
     # indicate progress
-    print('Reading configuration file:')
+    term_print('Reading configuration file:')
 
 except FileNotFoundError:
-    raise SystemExit('Error: configuration file <config.json> missing!')
+    err_message = ('\nError: configuration file missing!\n\nCreate a file '
+                   'called config.json in {} and specify (at least) the '
+                   'stations to be downloaded. For further details see: '
+                   'https://github.com/gpruss/codis.'
+                  ).format(script_directory)
+    term_print(err_message)
+    sys.exit(1)
 
 except JSONDecodeError as e:
-    raise SystemExit(
-        'Error: invalid configuration file <config.json>'
-        '\nPython is unable to parse your configuration file:'
-        '\n> {}'.format(e) )
+
+    # create error message
+    err_message = ('Error: invalid configuration file config.json\n\nPython '
+                   'is unable to parse your configuration file:\n{}'
+                  ).format(e)
+
+    # display error message
+    term_print(err_message)
+
+    # cancel script execution
+    sys.exit(1)
 
 
 # get the data_directory
@@ -52,34 +83,74 @@ if 'data_directory' in config:
     data_directory = config['data_directory']
 
 else:
-    # if no data directory has been specified, default to './data'
-    data_directory = path.join( getcwd(), 'data')
+    # if no data directory has been specified, default to
+    # '/my/path/to/CODiS/data/'
+    data_directory = path.join( script_directory, 'data')
 
 # indicate progress
 print( '> data directory:', data_directory)
 
 
 # get the start date
+# If no start date has been specified, default to January 1, 2010, because
+# there are no older observation data available at CODiS than that!
 # note: If data files are already present start_date will be overridden later
 #       by the last observation of the file, i.e. the download will be con-
-#       tinued.
+#       tinued!
 if 'start_date' in config:
 
-    # convert string into a date object
     try:
+
+        # convert string into a date object
         start_date = datetime.strptime(config['start_date'], '%Y-%m-%d').date()
 
     except ValueError:
 
-        # cancel script execution
-        raise SystemExit(
-            ('\nError: start_date given in unknown format <{}>\nPlease edit '
-             'your config.json and use the following date format: "YYYY-MM-DD"'
-             ', e.g. "2010-01-01"!').format(config["start_date"]))
+        # create error message
+        err_message = ('\nError: start_date given in unknown format ({})\n\n'
+                       'Please edit your config.json and use the following '
+                       'date format: "YYYY-MM-DD", e.g. "2010-01-01"!'
+                      ).format(config["start_date"])
 
+        # display error message
+        term_print(err_message)
+
+        # cancel script execution
+        sys.exit(1)
+
+
+    # sanity check: start_date must not be prior to 2010-01-01
+    if start_date < date(2010,1,1):
+
+        # create error message
+        err_message = ('\nError: start_date out of bounds ({})\n\nPlease edit '
+                       'your config.json and choose a start_date that is not '
+                       'earlier than January 1, 2010.').format(start_date)
+
+        # display error message
+        term_print(err_message)
+
+        # cancel script execution
+        sys.exit(1)
+
+    # sanity check: start_date must not be later than the day before yesterday
+    # note: see end_date for details
+    if start_date > (date.today() - timedelta(days=2)):
+
+        # create error message
+        err_message = ('\nError: start_date out of bounds ({})\n\nPlease edit '
+                       'your config.json and choose a start_date that is not '
+                       'later than the day before yesterday (CODiS updates '
+                       'are not that fast).').format(start_date)
+
+        # display error message
+        term_print(err_message)
+
+        # cancel script execution
+        sys.exit(1)
 else:
-    # if no start date has been specified, default to January 1, 2010
-    # (There are no older observation data available at CODiS than that)
+
+    # set the default value
     start_date = date(2010,1,1)
 
 # indicate progress
@@ -87,87 +158,71 @@ print( '> start date    :', start_date)
 
 
 # get the end date
+# If no end date has been specified, default to the day before yesterday,
+# because data are updated at 12:00 noon. Therefore using the day before
+# yesterday, i.e. date.today() - timedelta(days=2), should be safe regardless
+# of the local time.
 if 'end_date' in config:
 
-    # convert string into a date object
     try:
+
+        # convert string into a date object
         end_date = datetime.strptime(config['end_date'], '%Y-%m-%d').date()
 
     except ValueError:
 
+        # create error message
+        err_message = ('\nError: end_date given in unknown format ({})\n\n'
+                       'Please edit your config.json and use the following '
+                       'date format: "YYYY-MM-DD", e.g. "2017-01-01"!'
+                      ).format(config["end_date"])
+
+        # display error message
+        term_print(err_message)
+
         # cancel script execution
-        raise SystemExit(
-            ('\nError: end_date given in unknown format <{}>\nPlease edit '
-             'your config.json and use the following date format: "YYYY-MM-DD"'
-             ', e.g. "2017-01-01"!').format(config["end_date"]))
+        sys.exit(1)
+
+
+    # sanity check: end_date must not be later than the day before yesterday
+    if end_date > (date.today() - timedelta(days=2)):
+
+        # create error message
+        err_message = ('\nError: end_date out of bounds ({})\n\nPlease edit your '
+                       'config.json and choose an end_date that is not later '
+                       'than the day before yesterday (CODiS updates are not '
+                       'that fast).').format(end_date)
+
+        # display error message
+        term_print(err_message)
+
+        # cancel script execution
+        sys.exit(1)
 
 else:
-    # Data is updated at 12:00 noon the next day. Therefore using the day before
-    # yesterday, i.e. date.today() - timedelta(days=2), should be safe regardless
-    # of the local time.
+
+    # set the default value
     end_date   = date.today() - timedelta(days=2)
 
 # indicate progress
 print( '> end date      :', end_date)
 
 
-# get the station list
-if 'station_list' in config:
-    station_list = config['station_list']
-
-else:
-
-    # Quit the script
-    raise SystemExit(
-        '\nError: station_list not defined'
-        '\nPlease edit your config.json and add all stations to be downloaded:'
-        '\n"station_list" : {'
-        '\n    "[file_1]" : {"station" : "[ID_1]", "stname" : "[hanzi_name_1]"},'
-        '\n    "[file_2]" : {"station" : "[ID_2]", "stname" : "[hanzi_name_2]"},'
-        '\n    ...'
-        '\n    "[file_n]" : {"station" : "[ID_n]", "stname" : "[hanzi_name_n]"},'
-        '\n }')
-
-
-
-##################################### MAIN #####################################
-# set CODiS base URL (CWB Observation Data Inquire System, CWB = Central Weather
-# Bureau)
-base_URL = ( 'http://e-service.cwb.gov.tw/HistoryDataQuery/'
-            'DayDataController.do?command=viewMain' )
-
-# sanity check: start_date cannot be prior to 2010-01-01
-if start_date < date(2010,1,1):
-
-    # Quit the script
-    raise SystemExit(
-        '\nError: start_date out of bounds'
-        '\nPlease edit your config.json and choose a start_date that is not '
-        'earlier than January 1, 2010')
-
-# sanity check: end_date cannot be later than the day before yesterday
-if end_date > (date.today() - timedelta(days=2)):
-
-    # Quit the script
-    raise SystemExit(
-        '\nError: end_date out of bounds'
-        '\nPlease edit your config.json and choose an end_date that is not '
-        'later than the day before yesterday (CODiS updates are not that fast).')
-
-
 # sanity check: end_date must be after start_date
 if start_date > end_date:
 
+    term_print(('\nError: start_date ({}) is after end_date ({}).'
+               ).format(start_date,end_date))
+
     # present the choice to swap or to quit
-    user_input = input( ('\nstart_date ({}) is after end_date ({}). Do you want'
-                         ' to swap the values [s] or quit the program [q]? '
-                        ).format(start_date,end_date))
+    user_input = input('Do you want to ...\n[s] swap the values, or\n'
+                       '[q] quit the program?\n')
 
     # repeat until a valid input has been given
     while True:
 
         # user decides to swap the values of start_date and end_date
-        if user_input.lower() == 's':
+        if (user_input.lower() == 's') or (user_input.lower() == '[s]'):
 
             start_date, end_date = end_date, start_date
 
@@ -175,7 +230,7 @@ if start_date > end_date:
             break
 
         # user decides to quit the program
-        elif user_input.lower() == 'q':
+        elif (user_input.lower() == 'q') or (user_input.lower() == '[q]'):
 
             quit()
 
@@ -187,11 +242,60 @@ if start_date > end_date:
                                  ' to switch, or [q] to quit. ') )
 
 
+# get the station list
+if 'station_list' in config:
+
+    station_list = config['station_list']
+
+    if len(station_list) < 1:
+
+        # create error message
+        err_message = ('\nError: station_list is empty\n\nPlease edit your '
+                       'config.json and add all stations to be downloaded:\n'
+                       '"station_list" : {'
+                       '\n    "[file_1]" : {"station" : "[ID_1]", "stname" : '
+                       '"[hanzi_name_1]"},\n    "[file_2]" : {"station" : "[ID_2]"'
+                       ', "stname" : "[hanzi_name_2]"},\n    ...\n    "[file_n]" :'
+                       ' {"station" : "[ID_n]", "stname" : "[hanzi_name_n]"},\n }'
+                      )
+
+        # display error message
+        term_print(err_message)
+
+        # cancel script execution
+        sys.exit(1)
+
+else:
+
+    # create error message
+    err_message = ('\nError: station_list not defined\n\nPlease edit your '
+                   'config.json and add all stations to be downloaded:\n'
+                   '"station_list" : {'
+                   '\n    "[file_1]" : {"station" : "[ID_1]", "stname" : '
+                   '"[hanzi_name_1]"},\n    "[file_2]" : {"station" : "[ID_2]"'
+                   ', "stname" : "[hanzi_name_2]"},\n    ...\n    "[file_n]" :'
+                   ' {"station" : "[ID_n]", "stname" : "[hanzi_name_n]"},\n }'
+                  )
+
+    # display error message
+    term_print(err_message)
+
+    # cancel script execution
+    sys.exit(1)
+
+
+##################################### MAIN #####################################
+# set CODiS base URL (CWB Observation Data Inquire System, CWB = Central Weather
+# Bureau)
+base_URL = ( 'http://e-service.cwb.gov.tw/HistoryDataQuery/'
+            'DayDataController.do?command=viewMain' )
+
+
 # create the data directory if it does not exist yet
 if not path.isdir( data_directory ):
 
     # indicate progress
-    print('\ncreating data directory: {}'.format(path.abspath(data_directory)))
+    print('\ncreating data directory: {}'.format(data_directory))
 
     # create the directory
     makedirs( data_directory )
@@ -342,4 +446,4 @@ for key, value in station_list.items():
     df.to_csv( output_path, mode = access_mode, header = write_header )
 
 # indicate progress
-print('\nDone!')
+print('\nDone!\n')
