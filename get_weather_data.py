@@ -22,6 +22,8 @@ from textwrap     import fill
 from urllib.parse import quote
 
 # third party libraries
+# note: html5lib needs to be included in the requirements.txt because Pandas
+#       uses it if lxml fails parsing.
 from pandas       import ( DataFrame, MultiIndex, Timestamp, date_range,
                            read_html, to_datetime )
 
@@ -47,13 +49,13 @@ script_directory = path.dirname(path.realpath(__file__))
 # display a header consisting of the current date padded with hyphens
 term_print(('\n{:-^80}'.format(datetime.now().strftime('%Y-%m-%d %H:%M'))))
 
+# indicate progress
+term_print('Reading configuration file:')
+
 # read the configuration file (returns a dictionary)
 try:
     with open(path.join(script_directory, 'config.json')) as config_file:
             config = load(config_file)
-
-    # indicate progress
-    term_print('Reading configuration file:')
 
 except FileNotFoundError:
     err_message = ('\nError: configuration file missing!\n\nCreate a file '
@@ -419,13 +421,16 @@ for key, value in station_list.items():
         # indicate progress
         print( '  + formatting data' )
 
-        # reformat the index by combining the current date and time
+        # replace the index by the current date and time
+        # note: '1' corresponds to 1:00 a.m., '2' is 2:00 a.m., etc. Be aware
+        #       that '12' is actually 0:00 a.m. the following day!
         tmp.index = to_datetime( tmp.index, unit = 'h',
                                  origin = Timestamp(day) )
 
         # split DateTimeIndex into date and time MultiIndex
-        tmp.index = MultiIndex.from_arrays( [tmp.index.date, tmp.index.time],
-                                            names = ['Date','Time'] )
+        tmp.index = MultiIndex.from_arrays([tmp.index.strftime('%Y-%m-%d'),
+                                            tmp.index.strftime('%H:%M')],
+                                            names = ['Date','Time'])
 
         # rename columns
         tmp.rename( columns = {
@@ -444,6 +449,12 @@ for key, value in station_list.items():
             '全天空日射量(MJ/㎡)GloblRad'   : 'global radiation [MJ/m²]' ,
             '能見度(km)Visb'                : 'visibility [km]'          },
             inplace = True )
+
+        # drop empty rows
+        tmp.dropna(axis = 0, how = 'all')
+
+        # indicate progress
+        print( '  + appending to data frame' )
 
         # append working table to the DataFrame
         df = df.append( tmp, verify_integrity = True )
